@@ -1,1 +1,686 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0f172a">
+    <title>FuelTrack Web - Inventaire Carburant</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛽</text></svg>">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <style>
+        :root { --primary: #3b82f6; --primary-dark: #2563eb; --success: #10b981; --danger: #ef4444; --warning: #f59e0b; --bg: #0f172a; --surface: #1e293b; --surface-light: #334155; --text: #f1f5f9; --text-muted: #94a3b8; --border: #475569; }
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; padding-bottom: 80px; }
+        .app-header { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); padding: 20px 16px; position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 20px rgba(59,130,246,0.3); }
+        .app-header h1 { font-size: 1.4rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .app-header h1::before { content: '⛽'; font-size: 1.6rem; }
+        .nav-tabs { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 64px; z-index: 99; overflow-x: auto; }
+        .nav-tab { flex: 1; min-width: 80px; padding: 14px 8px; text-align: center; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); cursor: pointer; border: none; border-bottom: 3px solid transparent; transition: all 0.2s; background: none; white-space: nowrap; }
+        .nav-tab.active { color: var(--primary); border-bottom-color: var(--primary); background: rgba(59,130,246,0.1); }
+        .page { display: none; padding: 16px; max-width: 800px; margin: 0 auto; animation: fadeIn 0.3s ease; }
+        .page.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .card { background: var(--surface); border-radius: 16px; padding: 20px; margin-bottom: 16px; border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+        .card-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .form-group { margin-bottom: 16px; }
+        .form-label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .form-input, .form-select { width: 100%; padding: 14px 16px; border-radius: 12px; border: 2px solid var(--border); background: var(--bg); color: var(--text); font-size: 1rem; transition: border-color 0.2s; outline: none; }
+        .form-input:focus, .form-select:focus { border-color: var(--primary); }
+        .btn { width: 100%; padding: 14px 16px; border-radius: 12px; border: none; font-size: 0.95rem; font-weight: 700; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-primary { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: white; box-shadow: 0 4px 16px rgba(59,130,246,0.4); }
+        .btn-primary:active { transform: scale(0.98); }
+        .btn-success { background: linear-gradient(135deg, var(--success) 0%, #059669 100%); color: white; }
+        .btn-danger { background: linear-gradient(135deg, var(--danger) 0%, #dc2626 100%); color: white; }
+        .btn-secondary { background: var(--surface-light); color: var(--text); border: 2px solid var(--border); }
+        .btn-warning { background: linear-gradient(135deg, var(--warning) 0%, #d97706 100%); color: white; }
+        .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .btn-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+        .camera-container { position: relative; width: 100%; aspect-ratio: 4/3; background: #000; border-radius: 16px; overflow: hidden; margin-bottom: 16px; border: 2px solid var(--border); }
+        #cameraVideo, #cameraCanvas, #previewImg { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
+        #previewImg { display: none; object-fit: contain; background: #000; }
+        .camera-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; pointer-events: none; }
+        .camera-frame { width: 80%; height: 40%; border: 3px dashed rgba(255,255,255,0.6); border-radius: 12px; position: relative; }
+        .camera-frame::before, .camera-frame::after { content: ''; position: absolute; width: 20px; height: 20px; border: 3px solid var(--primary); }
+        .camera-frame::before { top: -3px; left: -3px; border-right: none; border-bottom: none; }
+        .camera-frame::after { bottom: -3px; right: -3px; border-left: none; border-top: none; }
+        .camera-hint { position: absolute; bottom: 20px; background: rgba(0,0,0,0.7); padding: 8px 16px; border-radius: 20px; font-size: 0.8rem; color: white; }
+        .shutter-btn { width: 72px; height: 72px; border-radius: 50%; background: white; border: 4px solid var(--primary); position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 20; cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
+        .shutter-btn::after { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 56px; height: 56px; border-radius: 50%; background: var(--primary); transition: all 0.1s; }
+        .shutter-btn:active::after { width: 48px; height: 48px; }
+        .ocr-status { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-radius: 12px; background: rgba(59,130,246,0.1); border: 1px solid var(--primary); margin-bottom: 16px; font-size: 0.9rem; }
+        .ocr-status .spinner { width: 20px; height: 20px; border: 2px solid var(--primary); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .vehicle-list { display: flex; flex-direction: column; gap: 12px; }
+        .vehicle-item { background: var(--surface); border-radius: 12px; padding: 16px; border: 2px solid var(--border); cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 12px; }
+        .vehicle-item:hover, .vehicle-item.selected { border-color: var(--primary); background: rgba(59,130,246,0.1); }
+        .vehicle-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 700; color: white; }
+        .vehicle-info { flex: 1; }
+        .vehicle-name { font-weight: 700; font-size: 1rem; }
+        .vehicle-plate { font-size: 0.8rem; color: var(--text-muted); }
+        .fill-item { background: var(--surface); border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid var(--border); display: flex; gap: 12px; align-items: center; }
+        .fill-img { width: 60px; height: 60px; border-radius: 8px; object-fit: cover; background: var(--bg); }
+        .fill-details { flex: 1; }
+        .fill-vehicle { font-weight: 700; font-size: 0.95rem; }
+        .fill-meta { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
+        .fill-amount { text-align: right; font-weight: 700; font-size: 1.1rem; color: var(--success); }
+        .fill-volume { font-size: 0.8rem; color: var(--text-muted); }
+        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
+        .stat-card { background: var(--surface); border-radius: 12px; padding: 16px; border: 1px solid var(--border); text-align: center; }
+        .stat-value { font-size: 1.5rem; font-weight: 800; color: var(--primary); }
+        .stat-label { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; }
+        .chart-container { background: var(--surface); border-radius: 16px; padding: 16px; border: 1px solid var(--border); margin-bottom: 16px; position: relative; height: 280px; }
+        .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+        .empty-state-icon { font-size: 3rem; margin-bottom: 12px; opacity: 0.5; }
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1000; display: none; align-items: center; justify-content: center; padding: 20px; }
+        .modal-overlay.active { display: flex; }
+        .modal-content { background: var(--surface); border-radius: 20px; padding: 24px; width: 100%; max-width: 400px; max-height: 90vh; overflow-y: auto; border: 1px solid var(--border); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .modal-title { font-size: 1.2rem; font-weight: 700; }
+        .modal-close { background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; }
+        .filter-bar { display: flex; gap: 8px; margin-bottom: 16px; overflow-x: auto; padding-bottom: 4px; }
+        .filter-chip { padding: 8px 16px; border-radius: 20px; background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); font-size: 0.85rem; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
+        .filter-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%) translateY(100px); background: var(--surface); color: var(--text); padding: 14px 24px; border-radius: 12px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,0.4); border: 1px solid var(--border); z-index: 2000; opacity: 0; transition: all 0.3s; display: flex; align-items: center; gap: 8px; }
+        .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+        .toast.success { border-color: var(--success); }
+        .toast.error { border-color: var(--danger); }
+        .location-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 20px; background: rgba(16,185,129,0.1); color: var(--success); font-size: 0.75rem; font-weight: 600; }
+        .delete-btn { background: none; border: none; color: var(--danger); font-size: 1.2rem; cursor: pointer; padding: 8px; border-radius: 8px; }
+        .delete-btn:active { background: rgba(239,68,68,0.1); }
+        .ocr-preview { background: var(--bg); border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px dashed var(--border); }
+        .ocr-preview img { width: 100%; border-radius: 8px; margin-bottom: 12px; }
+        .ocr-text { font-family: 'Courier New', monospace; font-size: 0.85rem; color: var(--text-muted); white-space: pre-wrap; max-height: 100px; overflow-y: auto; }
+        .color-picker { display: flex; gap: 8px; flex-wrap: wrap; }
+        .color-option { width: 36px; height: 36px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; transition: all 0.2s; }
+        .color-option.selected { border-color: white; box-shadow: 0 0 0 2px var(--primary); }
+        .summary-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        .summary-table th, .summary-table td { padding: 12px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+        .summary-table th { color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; }
+        .summary-table td { font-weight: 500; }
+        .summary-table tr:last-child td { border-bottom: none; }
+        .month-selector { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+        .month-nav { background: var(--surface); border: 1px solid var(--border); color: var(--text); width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; cursor: pointer; }
+        .month-display { font-weight: 700; font-size: 1.1rem; }
+        .export-section { background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(16,185,129,0.1)); border: 1px solid var(--primary); border-radius: 16px; padding: 20px; margin-bottom: 16px; }
+        .import-zone { border: 2px dashed var(--border); border-radius: 12px; padding: 30px 20px; text-align: center; color: var(--text-muted); cursor: pointer; transition: all 0.2s; margin-bottom: 16px; }
+        .import-zone:hover { border-color: var(--primary); background: rgba(59,130,246,0.05); }
+        .import-zone input { display: none; }
+        .data-preview { background: var(--bg); border-radius: 12px; padding: 16px; font-family: 'Courier New', monospace; font-size: 0.75rem; color: var(--text-muted); max-height: 200px; overflow-y: auto; white-space: pre; margin-bottom: 16px; border: 1px solid var(--border); }
+        .server-status { position: fixed; top: 70px; right: 16px; padding: 6px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; z-index: 101; display: flex; align-items: center; gap: 6px; }
+        .server-status.online { background: rgba(16,185,129,0.2); color: var(--success); border: 1px solid var(--success); }
+        .server-status.offline { background: rgba(239,68,68,0.2); color: var(--danger); border: 1px solid var(--danger); }
+        .server-status .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+        /* LOGIN PAGE */
+        .login-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+        .login-card { background: var(--surface); border-radius: 24px; padding: 40px 32px; width: 100%; max-width: 400px; border: 1px solid var(--border); box-shadow: 0 20px 60px rgba(0,0,0,0.4); text-align: center; }
+        .login-logo { font-size: 4rem; margin-bottom: 16px; }
+        .login-title { font-size: 1.8rem; font-weight: 800; margin-bottom: 8px; }
+        .login-subtitle { color: var(--text-muted); margin-bottom: 32px; font-size: 0.95rem; }
+        .login-input { width: 100%; padding: 16px 20px; border-radius: 12px; border: 2px solid var(--border); background: var(--bg); color: var(--text); font-size: 1.1rem; margin-bottom: 16px; outline: none; transition: border-color 0.2s; }
+        .login-input:focus { border-color: var(--primary); }
+        .login-btn { width: 100%; padding: 16px; border-radius: 12px; border: none; background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: white; font-size: 1.1rem; font-weight: 700; cursor: pointer; box-shadow: 0 4px 16px rgba(59,130,246,0.4); }
+        .login-btn:active { transform: scale(0.98); }
+        .login-error { color: var(--danger); font-size: 0.9rem; margin-top: 12px; min-height: 20px; }
+        .login-footer { margin-top: 24px; color: var(--text-muted); font-size: 0.85rem; }
+        .logout-btn { position: fixed; top: 16px; right: 16px; z-index: 102; background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); padding: 8px 16px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: none; }
+        .logout-btn.visible { display: flex; align-items: center; gap: 6px; }
+
+        @media (min-width: 768px) { .page { padding: 24px; } .stats-grid { grid-template-columns: repeat(4, 1fr); } }
+        @media (max-width: 380px) { .stats-grid { grid-template-columns: 1fr; } .btn-row, .btn-row-3 { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <!-- LOGIN PAGE -->
+    <div class="login-page" id="loginPage">
+        <div class="login-card">
+            <div class="login-logo">⛽</div>
+            <div class="login-title">FuelTrack</div>
+            <div class="login-subtitle">Inventaire de vos pleins de carburant</div>
+            <input type="password" class="login-input" id="loginPassword" placeholder="Mot de passe" onkeypress="if(event.key==='Enter')doLogin()">
+            <button class="login-btn" onclick="doLogin()">🔓 Se connecter</button>
+            <div class="login-error" id="loginError"></div>
+            <div class="login-footer">Vos données sont stockées de manière sécurisée</div>
+        </div>
+    </div>
+
+    <!-- MAIN APP -->
+    <div id="mainApp" style="display:none;">
+        <button class="logout-btn" id="logoutBtn" onclick="doLogout()">🔒 Déconnexion</button>
+        <div class="app-header"><h1>FuelTrack Web</h1></div>
+        <div class="server-status online" id="serverStatus"><div class="dot"></div><span>Connecté</span></div>
+
+        <div class="nav-tabs">
+            <button class="nav-tab active" data-page="new">⛽ Nouveau</button>
+            <button class="nav-tab" data-page="history">📋 Historique</button>
+            <button class="nav-tab" data-page="stats">📊 Stats</button>
+            <button class="nav-tab" data-page="vehicles">🚗 Véhicules</button>
+            <button class="nav-tab" data-page="data">💾 Données</button>
+        </div>
+
+        <div class="page active" id="page-new">
+            <div class="card">
+                <div class="card-title">📷 Photo du compteur</div>
+                <div class="camera-container" id="cameraContainer">
+                    <video id="cameraVideo" autoplay playsinline></video>
+                    <canvas id="cameraCanvas" style="display:none;"></canvas>
+                    <img id="previewImg" alt="Aperçu">
+                    <div class="camera-overlay" id="cameraOverlay">
+                        <div class="camera-frame"></div>
+                        <div class="camera-hint">Cadrez le compteur dans le rectangle</div>
+                    </div>
+                    <button class="shutter-btn" id="shutterBtn" onclick="takePhoto()"></button>
+                </div>
+                <div class="ocr-status" id="ocrStatus" style="display:none;">
+                    <div class="spinner"></div><span>Analyse de l'image en cours...</span>
+                </div>
+                <div class="ocr-preview" id="ocrPreview" style="display:none;">
+                    <img id="ocrPreviewImg" alt=""><div class="ocr-text" id="ocrText"></div>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-secondary" id="retakeBtn" onclick="retakePhoto()" style="display:none;">🔄 Reprendre</button>
+                    <button class="btn btn-primary" id="analyzeBtn" onclick="analyzePhoto()" style="display:none;">🔍 Analyser</button>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">🚗 Véhicule</div>
+                <div class="vehicle-list" id="vehicleSelectList"></div>
+                <div style="margin-top:12px;"><button class="btn btn-secondary" onclick="openVehicleModal()">+ Ajouter un véhicule</button></div>
+            </div>
+            <div class="card">
+                <div class="card-title">📝 Détails du plein</div>
+                <div class="form-group"><label class="form-label">Date & Heure</label><input type="datetime-local" class="form-input" id="fillDate"></div>
+                <div class="form-group"><label class="form-label">Volume (L)</label><input type="number" class="form-input" id="fillVolume" step="0.01" placeholder="Ex: 42.50"></div>
+                <div class="form-group"><label class="form-label">Prix au litre (€)</label><input type="number" class="form-input" id="fillPrice" step="0.001" placeholder="Ex: 1.789"></div>
+                <div class="form-group"><label class="form-label">Montant total (€)</label><input type="number" class="form-input" id="fillTotal" step="0.01" placeholder="Auto-calculé" readonly style="background:var(--surface-light);"></div>
+                <div class="form-group"><label class="form-label">Kilométrage (km)</label><input type="number" class="form-input" id="fillKm" step="1" placeholder="Ex: 45230"></div>
+                <div class="form-group"><label class="form-label">Localisation</label><div id="locationDisplay" class="location-badge">📍 Localisation en cours...</div></div>
+                <button class="btn btn-success" onclick="saveFill()">💾 Enregistrer le plein</button>
+            </div>
+        </div>
+
+        <div class="page" id="page-history">
+            <div class="filter-bar" id="historyFilters"></div>
+            <div id="historyList"></div>
+        </div>
+
+        <div class="page" id="page-stats">
+            <div class="filter-bar" id="statsFilters"></div>
+            <div class="month-selector" id="monthSelector">
+                <button class="month-nav" onclick="changeMonth(-1)">◀</button>
+                <div class="month-display" id="monthDisplay"></div>
+                <button class="month-nav" onclick="changeMonth(1)">▶</button>
+            </div>
+            <div class="stats-grid" id="statsGrid"></div>
+            <div class="card"><div class="card-title">📈 Évolution du prix au litre</div><div class="chart-container"><canvas id="priceChart"></canvas></div></div>
+            <div class="card"><div class="card-title">⛽ Volume mensuel</div><div class="chart-container"><canvas id="volumeChart"></canvas></div></div>
+            <div class="card"><div class="card-title">💰 Dépenses mensuelles</div><div class="chart-container"><canvas id="costChart"></canvas></div></div>
+            <div class="card"><div class="card-title">📋 Récapitulatif</div><table class="summary-table" id="summaryTable"></table></div>
+        </div>
+
+        <div class="page" id="page-vehicles">
+            <div class="card"><div class="card-title">🚗 Mes véhicules</div><div id="vehiclesList"></div></div>
+            <div style="padding: 0 16px;"><button class="btn btn-primary" onclick="openVehicleModal()">+ Ajouter un véhicule</button></div>
+        </div>
+
+        <div class="page" id="page-data">
+            <div class="export-section">
+                <div class="card-title">📤 Exporter mes données</div>
+                <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:16px;">Exportez vos pleins et véhicules pour les sauvegarder ou les partager.</p>
+                <div class="btn-row-3">
+                    <button class="btn btn-primary" onclick="exportCSV()">📄 CSV</button>
+                    <button class="btn btn-success" onclick="exportJSON()">📋 JSON</button>
+                    <button class="btn btn-warning" onclick="shareData()">📲 Partager</button>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">📥 Importer des données</div>
+                <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:16px;">Restaurez une sauvegarde précédente ou importez des données.</p>
+                <div class="import-zone" id="importZone" onclick="document.getElementById('importFile').click()">
+                    <div style="font-size:2rem;margin-bottom:8px;">📁</div>
+                    <div><strong>Cliquez pour sélectionner un fichier</strong></div>
+                    <div style="font-size:0.8rem;margin-top:4px;">JSON ou CSV acceptés</div>
+                </div>
+                <input type="file" id="importFile" accept=".json,.csv" onchange="handleImport(event)">
+                <div class="data-preview" id="importPreview" style="display:none;"></div>
+                <button class="btn btn-success" id="confirmImportBtn" style="display:none;" onclick="confirmImport()">✅ Confirmer l'import</button>
+            </div>
+            <div class="card">
+                <div class="card-title">⚠️ Danger Zone</div>
+                <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:16px;">Attention : ces actions sont irréversibles.</p>
+                <div class="btn-row">
+                    <button class="btn btn-secondary" onclick="resetAllData()">🗑️ Tout effacer</button>
+                    <button class="btn btn-secondary" onclick="generateDemoData()">🎲 Données démo</button>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">ℹ️ À propos</div>
+                <div style="color:var(--text-muted);font-size:0.9rem;line-height:1.6;">
+                    <p><strong>FuelTrack Web v1.0</strong></p>
+                    <p>Application web sécurisée de suivi des pleins.</p>
+                    <p>Données stockées sur le serveur avec authentification.</p>
+                    <p style="margin-top:8px;">🔒 <em>Connecté en tant qu'administrateur</em></p>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="vehicleModal">
+            <div class="modal-content">
+                <div class="modal-header"><div class="modal-title">🚗 Nouveau véhicule</div><button class="modal-close" onclick="closeVehicleModal()">×</button></div>
+                <div class="form-group"><label class="form-label">Nom du véhicule</label><input type="text" class="form-input" id="newVehicleName" placeholder="Ex: Ma Clio"></div>
+                <div class="form-group"><label class="form-label">Immatriculation</label><input type="text" class="form-input" id="newVehiclePlate" placeholder="Ex: AB-123-CD"></div>
+                <div class="form-group"><label class="form-label">Type de carburant</label><select class="form-select" id="newVehicleFuel"><option value="SP95">SP95</option><option value="SP98">SP98</option><option value="E10">E10</option><option value="Diesel">Diesel / Gazole</option><option value="E85">E85</option><option value="GPL">GPL</option><option value="Electrique">Électrique</option></select></div>
+                <div class="form-group"><label class="form-label">Couleur</label><div class="color-picker" id="colorPicker"></div></div>
+                <button class="btn btn-success" onclick="saveVehicle()">💾 Enregistrer</button>
+            </div>
+        </div>
+
+        <div class="toast" id="toast"></div>
+    </div>
+
+    <script>
+    // ==================== AUTH ====================
+    let authToken = localStorage.getItem('fueltrack_token') || '';
+
+    async function checkAuth() {
+        if (!authToken) { showLogin(); return; }
+        try {
+            const res = await fetch('/api/auth/check', { headers: { 'Authorization': 'Bearer ' + authToken } });
+            const data = await res.json();
+            if (data.authenticated) { showApp(); } else { showLogin(); }
+        } catch (e) { showLogin(); }
+    }
+
+    async function doLogin() {
+        const password = document.getElementById('loginPassword').value;
+        const errorDiv = document.getElementById('loginError');
+        try {
+            const res = await fetch('/api/auth/login', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: password })
+            });
+            const data = await res.json();
+            if (data.success) {
+                authToken = data.token;
+                localStorage.setItem('fueltrack_token', authToken);
+                showApp();
+            } else {
+                errorDiv.textContent = 'Mot de passe incorrect';
+            }
+        } catch (e) { errorDiv.textContent = 'Erreur de connexion'; }
+    }
+
+    function doLogout() {
+        authToken = '';
+        localStorage.removeItem('fueltrack_token');
+        showLogin();
+    }
+
+    function showLogin() {
+        document.getElementById('loginPage').style.display = 'flex';
+        document.getElementById('mainApp').style.display = 'none';
+        document.getElementById('logoutBtn').classList.remove('visible');
+        document.getElementById('loginPassword').value = '';
+        document.getElementById('loginError').textContent = '';
+    }
+
+    function showApp() {
+        document.getElementById('loginPage').style.display = 'none';
+        document.getElementById('mainApp').style.display = 'block';
+        document.getElementById('logoutBtn').classList.add('visible');
+        initApp();
+    }
+
+    // ==================== API ====================
+    async function apiGet(endpoint) {
+        const res = await fetch(endpoint, { headers: { 'Authorization': 'Bearer ' + authToken } });
+        if (res.status === 401) { showLogin(); throw new Error('Non authentifié'); }
+        if (!res.ok) throw new Error('API Error: ' + res.status);
+        return res.json();
+    }
+    async function apiPost(endpoint, data) {
+        const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken }, body: JSON.stringify(data) });
+        if (res.status === 401) { showLogin(); throw new Error('Non authentifié'); }
+        if (!res.ok) throw new Error('API Error: ' + res.status);
+        return res.json();
+    }
+    async function apiDelete(endpoint) {
+        const res = await fetch(endpoint, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + authToken } });
+        if (res.status === 401) { showLogin(); throw new Error('Non authentifié'); }
+        if (!res.ok) throw new Error('API Error: ' + res.status);
+        return res.json();
+    }
+
+    // ==================== UI ====================
+    function showToast(msg, type) {
+        const toast = document.getElementById('toast');
+        toast.textContent = msg;
+        toast.className = 'toast ' + (type || 'success') + ' show';
+        setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+    function formatDate(dateStr) {
+        const d = new Date(dateStr);
+        return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+    function formatCurrency(val) { return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(val || 0); }
+    function formatNumber(val, digits) { return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: digits || 2, maximumFractionDigits: digits || 2 }).format(val || 0); }
+
+    document.querySelectorAll('.nav-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById('page-' + tab.dataset.page).classList.add('active');
+            if (tab.dataset.page === 'history') renderHistory();
+            if (tab.dataset.page === 'stats') renderStats();
+            if (tab.dataset.page === 'vehicles') renderVehicles();
+            if (tab.dataset.page === 'new') initCamera();
+        });
+    });
+
+    // ==================== CAMERA ====================
+    let currentPhoto = null, currentStream = null, currentLocation = null;
+    async function initCamera() {
+        const video = document.getElementById('cameraVideo'), preview = document.getElementById('previewImg');
+        const overlay = document.getElementById('cameraOverlay'), shutter = document.getElementById('shutterBtn');
+        preview.style.display = 'none'; video.style.display = 'block'; overlay.style.display = 'flex'; shutter.style.display = 'block';
+        document.getElementById('retakeBtn').style.display = 'none'; document.getElementById('analyzeBtn').style.display = 'none';
+        document.getElementById('ocrPreview').style.display = 'none'; document.getElementById('ocrStatus').style.display = 'none';
+        currentPhoto = null;
+        try {
+            if (currentStream) currentStream.getTracks().forEach(t => t.stop());
+            currentStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } });
+            video.srcObject = currentStream;
+        } catch (err) { showToast('Caméra non accessible', 'error'); }
+    }
+    function takePhoto() {
+        const video = document.getElementById('cameraVideo'), canvas = document.getElementById('cameraCanvas');
+        const preview = document.getElementById('previewImg'), overlay = document.getElementById('cameraOverlay');
+        const shutter = document.getElementById('shutterBtn');
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        currentPhoto = canvas.toDataURL('image/jpeg', 0.9);
+        preview.src = currentPhoto; preview.style.display = 'block'; video.style.display = 'none';
+        overlay.style.display = 'none'; shutter.style.display = 'none';
+        document.getElementById('retakeBtn').style.display = 'flex'; document.getElementById('analyzeBtn').style.display = 'flex';
+        if (currentStream) { currentStream.getTracks().forEach(t => t.stop()); currentStream = null; }
+    }
+    function retakePhoto() { initCamera(); }
+    async function analyzePhoto() {
+        if (!currentPhoto) return;
+        const status = document.getElementById('ocrStatus'), preview = document.getElementById('ocrPreview');
+        const previewImg = document.getElementById('ocrPreviewImg'), ocrText = document.getElementById('ocrText');
+        status.style.display = 'flex'; preview.style.display = 'none';
+        try {
+            const result = await Tesseract.recognize(currentPhoto, 'fra');
+            const text = result.data.text;
+            ocrText.textContent = text; previewImg.src = currentPhoto;
+            preview.style.display = 'block'; status.style.display = 'none';
+            const numbers = text.match(/[\d.,]+/g)?.map(m => parseFloat(m.replace(',', '.'))).filter(n => !isNaN(n)) || [];
+            if (numbers.length > 0) {
+                const vols = numbers.filter(n => n > 1 && n < 200);
+                const prices = numbers.filter(n => n > 0.5 && n < 5);
+                const totals = numbers.filter(n => n > 5 && n < 500);
+                if (vols.length) document.getElementById('fillVolume').value = vols[vols.length - 1];
+                if (prices.length) document.getElementById('fillPrice').value = prices[0];
+                if (totals.length) document.getElementById('fillTotal').value = totals[totals.length - 1];
+                calcTotal(); showToast('OCR: valeurs extraites !');
+            }
+        } catch (err) { status.style.display = 'none'; showToast('Erreur OCR', 'error'); }
+    }
+    function initLocation() {
+        const display = document.getElementById('locationDisplay');
+        if (!navigator.geolocation) { display.textContent = '📍 Non supportée'; return; }
+        navigator.geolocation.getCurrentPosition(
+            (pos) => { currentLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude }; display.innerHTML = '📍 ' + currentLocation.lat.toFixed(4) + ', ' + currentLocation.lng.toFixed(4); },
+            () => { display.textContent = '📍 Non disponible'; }, { enableHighAccuracy: true, timeout: 10000 }
+        );
+    }
+
+    // ==================== VEHICLES ====================
+    let selectedVehicleId = null;
+    const VEHICLE_COLORS = ['#3b82f6','#ef4444','#10b981','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#6366f1'];
+    async function renderVehicleSelect() {
+        try {
+            const vehicles = await apiGet('/api/vehicles');
+            const container = document.getElementById('vehicleSelectList');
+            container.innerHTML = '';
+            if (vehicles.length === 0) { container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🚗</div>Aucun véhicule</div>'; return; }
+            vehicles.forEach(v => {
+                const el = document.createElement('div');
+                el.className = 'vehicle-item ' + (v.id === selectedVehicleId ? 'selected' : '');
+                el.onclick = () => { selectedVehicleId = v.id; renderVehicleSelect(); };
+                el.innerHTML = '<div class="vehicle-icon" style="background: linear-gradient(135deg, ' + v.color + ', ' + v.color + 'dd);">' + v.name.charAt(0).toUpperCase() + '</div><div class="vehicle-info"><div class="vehicle-name">' + v.name + '</div><div class="vehicle-plate">' + (v.plate || 'Sans immat') + ' • ' + v.fuel_type + '</div></div>' + (v.id === selectedVehicleId ? '<span style="color:var(--primary);font-size:1.2rem;">✓</span>' : '');
+                container.appendChild(el);
+            });
+        } catch (e) { showToast('Erreur chargement véhicules', 'error'); }
+    }
+    async function renderVehicles() {
+        try {
+            const vehicles = await apiGet('/api/vehicles'), fills = await apiGet('/api/fills');
+            const container = document.getElementById('vehiclesList');
+            container.innerHTML = '';
+            if (vehicles.length === 0) { container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🚗</div>Aucun véhicule</div>'; return; }
+            vehicles.forEach(v => {
+                const vFills = fills.filter(f => f.vehicle_id === v.id);
+                const totalVol = vFills.reduce((s, f) => s + f.volume, 0);
+                const totalCost = vFills.reduce((s, f) => s + f.total, 0);
+                const el = document.createElement('div');
+                el.className = 'fill-item';
+                el.innerHTML = '<div class="vehicle-icon" style="background: linear-gradient(135deg, ' + v.color + ', ' + v.color + 'dd);width:48px;height:48px;font-size:1.2rem;">' + v.name.charAt(0).toUpperCase() + '</div><div class="fill-details"><div class="fill-vehicle">' + v.name + '</div><div class="fill-meta">' + (v.plate || 'Sans immat') + ' • ' + v.fuel_type + '</div><div class="fill-meta">' + vFills.length + ' plein(s) • ' + formatNumber(totalVol) + 'L • ' + formatCurrency(totalCost) + '</div></div><button class="delete-btn" onclick="deleteVehicle(\'' + v.id + '\')">🗑️</button>';
+                container.appendChild(el);
+            });
+        } catch (e) { showToast('Erreur chargement', 'error'); }
+    }
+    function openVehicleModal() { document.getElementById('vehicleModal').classList.add('active'); renderColorPicker(); }
+    function closeVehicleModal() { document.getElementById('vehicleModal').classList.remove('active'); document.getElementById('newVehicleName').value = ''; document.getElementById('newVehiclePlate').value = ''; }
+    let selectedColor = VEHICLE_COLORS[0];
+    function renderColorPicker() {
+        const container = document.getElementById('colorPicker');
+        container.innerHTML = '';
+        VEHICLE_COLORS.forEach(c => {
+            const el = document.createElement('div');
+            el.className = 'color-option ' + (c === selectedColor ? 'selected' : '');
+            el.style.background = c;
+            el.onclick = () => { selectedColor = c; renderColorPicker(); };
+            container.appendChild(el);
+        });
+    }
+    async function saveVehicle() {
+        const name = document.getElementById('newVehicleName').value.trim();
+        const plate = document.getElementById('newVehiclePlate').value.trim();
+        const fuel = document.getElementById('newVehicleFuel').value;
+        if (!name) { showToast('Nom requis', 'error'); return; }
+        await apiPost('/api/vehicles', { id: 'v_' + Date.now(), name: name, plate: plate, fuelType: fuel, color: selectedColor });
+        closeVehicleModal(); renderVehicleSelect(); renderVehicles(); showToast('Véhicule ajouté !');
+    }
+    async function deleteVehicle(id) {
+        if (!confirm('Supprimer ce véhicule et tous ses pleins ?')) return;
+        await apiDelete('/api/vehicles/' + id);
+        if (selectedVehicleId === id) selectedVehicleId = null;
+        renderVehicles(); renderVehicleSelect(); showToast('Véhicule supprimé');
+    }
+
+    // ==================== FILLS ====================
+    document.getElementById('fillVolume').addEventListener('input', calcTotal);
+    document.getElementById('fillPrice').addEventListener('input', calcTotal);
+    function calcTotal() {
+        const vol = parseFloat(document.getElementById('fillVolume').value) || 0;
+        const price = parseFloat(document.getElementById('fillPrice').value) || 0;
+        document.getElementById('fillTotal').value = (vol * price).toFixed(2);
+    }
+    async function saveFill() {
+        if (!selectedVehicleId) { showToast('Sélectionnez un véhicule', 'error'); return; }
+        const volume = parseFloat(document.getElementById('fillVolume').value);
+        const price = parseFloat(document.getElementById('fillPrice').value);
+        const total = parseFloat(document.getElementById('fillTotal').value);
+        const km = parseFloat(document.getElementById('fillKm').value) || null;
+        const date = document.getElementById('fillDate').value;
+        if (!volume || !price || !date) { showToast('Remplissez volume, prix et date', 'error'); return; }
+        await apiPost('/api/fills', { vehicleId: selectedVehicleId, date: new Date(date).toISOString(), volume, pricePerLiter: price, total, km, location: currentLocation, photo: currentPhoto });
+        document.getElementById('fillVolume').value = ''; document.getElementById('fillPrice').value = '';
+        document.getElementById('fillTotal').value = ''; document.getElementById('fillKm').value = '';
+        currentPhoto = null; initCamera(); showToast('Plein enregistré !');
+    }
+
+    // ==================== HISTORY ====================
+    async function renderHistory() {
+        try {
+            const vehicles = await apiGet('/api/vehicles');
+            const fills = await apiGet('/api/fills');
+            const filterBar = document.getElementById('historyFilters');
+            filterBar.innerHTML = '<button class="filter-chip active" data-vid="all">Tous</button>';
+            vehicles.forEach(v => {
+                const btn = document.createElement('button');
+                btn.className = 'filter-chip'; btn.dataset.vid = v.id; btn.textContent = v.name;
+                btn.onclick = () => { document.querySelectorAll('#historyFilters .filter-chip').forEach(c => c.classList.remove('active')); btn.classList.add('active'); renderHistoryList(fills, vehicles, v.id); };
+                filterBar.appendChild(btn);
+            });
+            document.querySelector('#historyFilters [data-vid="all"]').onclick = () => { document.querySelectorAll('#historyFilters .filter-chip').forEach(c => c.classList.remove('active')); document.querySelector('#historyFilters [data-vid="all"]').classList.add('active'); renderHistoryList(fills, vehicles, 'all'); };
+            renderHistoryList(fills, vehicles, 'all');
+        } catch (e) { showToast('Erreur historique', 'error'); }
+    }
+    function renderHistoryList(fills, vehicles, filterVid) {
+        const container = document.getElementById('historyList');
+        container.innerHTML = '';
+        const filtered = filterVid === 'all' ? fills : fills.filter(f => f.vehicle_id === filterVid);
+        if (filtered.length === 0) { container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div>Aucun plein</div>'; return; }
+        filtered.forEach(f => {
+            const v = vehicles.find(ve => ve.id === f.vehicle_id) || { name: 'Inconnu', color: '#666' };
+            const el = document.createElement('div');
+            el.className = 'fill-item';
+            el.innerHTML = (f.photo ? '<img src="' + f.photo + '" class="fill-img" alt="">' : '<div class="fill-img" style="display:flex;align-items:center;justify-content:center;background:var(--surface-light);font-size:1.5rem;">⛽</div>') + '<div class="fill-details"><div class="fill-vehicle">' + v.name + '</div><div class="fill-meta">' + formatDate(f.date) + '</div><div class="fill-meta">' + formatNumber(f.volume) + 'L @ ' + formatNumber(f.price_per_liter, 3) + '€/L</div>' + (f.km ? '<div class="fill-meta">' + f.km + ' km</div>' : '') + '</div><div><div class="fill-amount">' + formatCurrency(f.total) + '</div><div class="fill-volume">' + formatNumber(f.volume) + 'L</div></div><button class="delete-btn" onclick="deleteFill(' + f.id + ')">🗑️</button>';
+            container.appendChild(el);
+        });
+    }
+    async function deleteFill(id) {
+        if (!confirm('Supprimer ce plein ?')) return;
+        await apiDelete('/api/fills/' + id); renderHistory(); showToast('Plein supprimé');
+    }
+
+    // ==================== STATS ====================
+    let statsChartInstances = {}, currentStatsMonth = new Date();
+    async function renderStats() {
+        try {
+            const vehicles = await apiGet('/api/vehicles');
+            const stats = await apiGet('/api/stats?year=' + currentStatsMonth.getFullYear() + '&month=' + (currentStatsMonth.getMonth() + 1));
+            const filterBar = document.getElementById('statsFilters');
+            filterBar.innerHTML = '<button class="filter-chip active" data-vid="all">Tous</button>';
+            vehicles.forEach(v => {
+                const btn = document.createElement('button');
+                btn.className = 'filter-chip'; btn.dataset.vid = v.id; btn.textContent = v.name;
+                btn.onclick = () => { document.querySelectorAll('#statsFilters .filter-chip').forEach(c => c.classList.remove('active')); btn.classList.add('active'); loadStats(v.id); };
+                filterBar.appendChild(btn);
+            });
+            document.querySelector('#statsFilters [data-vid="all"]').onclick = () => { document.querySelectorAll('#statsFilters .filter-chip').forEach(c => c.classList.remove('active')); document.querySelector('#statsFilters [data-vid="all"]').classList.add('active'); loadStats('all'); };
+            updateMonthDisplay(); updateStatsDisplay(stats, vehicles);
+        } catch (e) { showToast('Erreur stats', 'error'); }
+    }
+    async function loadStats(vehicleId) {
+        try {
+            const stats = await apiGet('/api/stats?vehicleId=' + vehicleId + '&year=' + currentStatsMonth.getFullYear() + '&month=' + (currentStatsMonth.getMonth() + 1));
+            const vehicles = await apiGet('/api/vehicles');
+            updateStatsDisplay(stats, vehicles);
+        } catch (e) { showToast('Erreur chargement stats', 'error'); }
+    }
+    function updateMonthDisplay() { document.getElementById('monthDisplay').textContent = currentStatsMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }); }
+    function changeMonth(delta) {
+        currentStatsMonth.setMonth(currentStatsMonth.getMonth() + delta);
+        updateMonthDisplay();
+        const activeVid = document.querySelector('#statsFilters .filter-chip.active')?.dataset.vid || 'all';
+        loadStats(activeVid);
+    }
+    function updateStatsDisplay(stats, vehicles) {
+        const monthFills = stats.month || [], yearFills = stats.year || [], last12 = stats.last12 || [];
+        const totalVolMonth = monthFills.reduce((s, f) => s + f.volume, 0);
+        const totalCostMonth = monthFills.reduce((s, f) => s + f.total, 0);
+        const avgPriceMonth = monthFills.length > 0 ? monthFills.reduce((s, f) => s + f.price_per_liter, 0) / monthFills.length : 0;
+        document.getElementById('statsGrid').innerHTML = '<div class="stat-card"><div class="stat-value">' + formatNumber(totalVolMonth) + '</div><div class="stat-label">Litres (mois)</div></div><div class="stat-card"><div class="stat-value">' + formatCurrency(totalCostMonth) + '</div><div class="stat-label">Dépenses (mois)</div></div><div class="stat-card"><div class="stat-value">' + formatNumber(avgPriceMonth, 3) + '</div><div class="stat-label">Prix moyen €/L</div></div><div class="stat-card"><div class="stat-value">' + monthFills.length + '</div><div class="stat-label">Pleins (mois)</div></div>';
+        const months = last12.map(r => { const [y, m] = r.month.split('-'); return new Date(y, m - 1).toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' }); });
+        const volData = last12.map(r => r.total_volume), costData = last12.map(r => r.total_cost), priceData = last12.map(r => r.avg_price);
+        Object.values(statsChartInstances).forEach(c => c?.destroy?.());
+        statsChartInstances.price = new Chart(document.getElementById('priceChart'), { type: 'line', data: { labels: months, datasets: [{ label: 'Prix €/L', data: priceData, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true, tension: 0.4, pointRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } }, x: { grid: { display: false }, ticks: { color: '#94a3b8' } } } } });
+        statsChartInstances.volume = new Chart(document.getElementById('volumeChart'), { type: 'bar', data: { labels: months, datasets: [{ label: 'Volume L', data: volData, backgroundColor: 'rgba(16,185,129,0.7)', borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } }, x: { grid: { display: false }, ticks: { color: '#94a3b8' } } } } });
+        statsChartInstances.cost = new Chart(document.getElementById('costChart'), { type: 'bar', data: { labels: months, datasets: [{ label: 'Dépenses €', data: costData, backgroundColor: 'rgba(245,158,11,0.7)', borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } }, x: { grid: { display: false }, ticks: { color: '#94a3b8' } } } } });
+        const summaryBody = vehicles.map(v => {
+            const vMonth = monthFills.filter(f => f.vehicle_id === v.id);
+            const vYear = yearFills.filter(f => f.vehicle_id === v.id);
+            return { name: v.name, monthVol: vMonth.reduce((s, f) => s + f.volume, 0), monthCost: vMonth.reduce((s, f) => s + f.total, 0), yearCost: vYear.reduce((s, f) => s + f.total, 0), count: vMonth.length };
+        }).filter(s => s.monthVol > 0 || s.yearCost > 0);
+        const table = document.getElementById('summaryTable');
+        if (summaryBody.length === 0) { table.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Aucune donnée</td></tr>'; }
+        else { table.innerHTML = '<thead><tr><th>Véhicule</th><th>Pleins</th><th>Vol. Mois</th><th>Coût Mois</th><th>Coût Année</th></tr></thead><tbody>' + summaryBody.map(s => '<tr><td><strong>' + s.name + '</strong></td><td>' + s.count + '</td><td>' + formatNumber(s.monthVol) + 'L</td><td>' + formatCurrency(s.monthCost) + '</td><td>' + formatCurrency(s.yearCost) + '</td></tr>').join('') + '</tbody>'; }
+    }
+
+    // ==================== EXPORT/IMPORT ====================
+    let pendingImportData = null;
+    function exportCSV() { window.location.href = '/api/export/csv'; }
+    function exportJSON() { window.location.href = '/api/export/json'; }
+    async function shareData() {
+        try {
+            const res = await fetch('/api/export/json', { headers: { 'Authorization': 'Bearer ' + authToken } });
+            const blob = await res.blob();
+            const file = new File([blob], 'fueltrack_backup.json', { type: 'application/json' });
+            if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'FuelTrack Backup' }); }
+            else { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'fueltrack_backup.json'; a.click(); URL.revokeObjectURL(url); showToast('Fichier téléchargé'); }
+        } catch (e) { showToast('Erreur partage', 'error'); }
+    }
+    async function handleImport(event) {
+        const file = event.target.files[0]; if (!file) return;
+        const text = await file.text();
+        const preview = document.getElementById('importPreview');
+        const confirmBtn = document.getElementById('confirmImportBtn');
+        try {
+            if (file.name.endsWith('.json')) {
+                pendingImportData = JSON.parse(text);
+                preview.textContent = JSON.stringify(pendingImportData, null, 2).substring(0, 500) + '...';
+                preview.style.display = 'block'; confirmBtn.style.display = 'block';
+                showToast((pendingImportData.vehicles?.length || 0) + ' véhicules, ' + (pendingImportData.fills?.length || 0) + ' pleins détectés');
+            } else { preview.textContent = 'Import CSV non supporté. Utilisez JSON.'; preview.style.display = 'block'; confirmBtn.style.display = 'none'; }
+        } catch (e) { showToast('Fichier invalide', 'error'); }
+    }
+    async function confirmImport() {
+        if (!pendingImportData) return;
+        try { await apiPost('/api/import', pendingImportData); pendingImportData = null;
+            document.getElementById('importPreview').style.display = 'none';
+            document.getElementById('confirmImportBtn').style.display = 'none';
+            document.getElementById('importFile').value = ''; showToast('Import réussi !'); renderVehicleSelect();
+        } catch (e) { showToast('Erreur import', 'error'); }
+    }
+    async function resetAllData() {
+        if (!confirm('SUPPRIMER TOUTES LES DONNÉES ?')) return;
+        try { const vehicles = await apiGet('/api/vehicles'); for (const v of vehicles) await apiDelete('/api/vehicles/' + v.id);
+            showToast('Toutes les données effacées'); renderVehicleSelect(); renderVehicles();
+        } catch (e) { showToast('Erreur', 'error'); }
+    }
+    async function generateDemoData() {
+        if (!confirm('Générer des données de démo ?')) return;
+        try {
+            const vid = 'v_demo_' + Date.now();
+            await apiPost('/api/vehicles', { id: vid, name: 'Démo Clio', plate: 'DEMO-01', fuelType: 'SP95', color: '#3b82f6' });
+            const now = new Date();
+            for (let i = 0; i < 12; i++) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 15);
+                const vol = 35 + Math.random() * 15, price = 1.5 + Math.random() * 0.5;
+                await apiPost('/api/fills', { vehicleId: vid, date: d.toISOString(), volume: parseFloat(vol.toFixed(2)), pricePerLiter: parseFloat(price.toFixed(3)), total: parseFloat((vol * price).toFixed(2)), km: 40000 + i * 1000, location: null, photo: null });
+            }
+            showToast('Données de démo générées !'); renderVehicleSelect();
+        } catch (e) { showToast('Erreur génération', 'error'); }
+    }
+
+    // ==================== INIT ====================
+    async function initApp() {
+        const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        document.getElementById('fillDate').value = now.toISOString().slice(0, 16);
+        initCamera(); initLocation(); renderVehicleSelect();
+        try { await apiGet('/api/vehicles'); document.getElementById('serverStatus').className = 'server-status online'; document.getElementById('serverStatus').innerHTML = '<div class="dot"></div><span>Connecté</span>'; }
+        catch (e) { document.getElementById('serverStatus').className = 'server-status offline'; document.getElementById('serverStatus').innerHTML = '<div class="dot"></div><span>Hors ligne</span>'; }
+    }
+
+    // Démarrer
+    checkAuth();
+    </script>
+</body>
+</html>
 
